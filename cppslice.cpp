@@ -1,11 +1,29 @@
+#include <ranges>
 #include <type_traits>
 #include <vector>
+
+template<typename T, typename Container>
+concept Iterable = requires(Container c) {
+    typename Container::value_type;
+    requires std::is_same_v<T, typename Container::value_type>;
+    { std::begin(c) } -> std::input_iterator;
+    { std::end(c) } -> std::sentinel_for<decltype(std::begin(c))>;
+};
+
+template<typename T, typename V>
+concept View = std::ranges::input_range<V> && std::is_same_v<T, std::ranges::range_value_t<V>>;
+
+template<typename T>
+auto make_slice(View<T> auto && view, size_t start, size_t end) {
+    if (start > end) throw std::out_of_range("Start index cannot be greater than end index");
+    return view | std::ranges::views::drop(start) | std::ranges::views::take(end - start);
+}
 
 /**
  * @class Slice
  * @brief A view over a dynamic, resizable collection of homogeneous elements.
  *
- * The `Slice` class represents a view over a dynamic, resizable collection of homogeneous elements.
+ * A typical `Slice` represents a view over a dynamic, resizable collection of homogeneous elements.
  * It behaves similarly to array slices in other programming languages and introduces dynamic
  * behavior, while typically serving as a view over an array-like structure. This design is inspired
  * by the slice concept in the Go language.
@@ -35,10 +53,11 @@ private:
      *
      * The representation invariant RI states that
      *      - 0 ≤ _len < _cap
-     *      - _arr = nullptr \iff \text{_len} = 0 \)
+     *      - _arr = nullptr  <==>  \text{_len} = 0
      * The invariant ensures that the slice's capacity is always greater than or equal to its
      * length, and that the array pointer is `null` if the slice is empty.
      */
+
     static_assert(
       std::is_trivially_destructible_v<T> || std::is_destructible_v<T>,
       "Type T must provide a destructor if it is not trivially destructible"
@@ -55,7 +74,7 @@ public:
 
     template<typename Container>
     requires std::is_same_v<T, typename std::remove_reference_t<Container>::value_type>
-    Slice(Container && container); ///< Templated constructor
+    Slice(Container && container); ///< Templated constructor.
 
     template<typename... Args>
     requires(std::is_constructible_v<T, Args &&> && ...)
