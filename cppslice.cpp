@@ -2,6 +2,8 @@
 #include <type_traits>
 #include <vector>
 
+#define MJ_DEBUG std::printf("  +---------- DEBUG ----------+ \n")
+
 template<typename T, typename Container>
 concept Iterable = requires(Container c) {
     typename Container::value_type;
@@ -80,7 +82,28 @@ public:
     requires(std::is_constructible_v<T, Args &&> && ...)
     Slice(Args &&... args);        ///< Variadic constructor.
 
-    ~Slice() noexcept;             ///< Destructor.
+    Slice(auto && view, size_t begin, size_t end)
+        : _arr(nullptr), _len(end - begin + 1), _cap(_len) {
+        allocate(_cap);
+        if (begin > end) throw std::out_of_range("Start index cannot be greater than end index");
+        std::printf("View\n");
+        auto subview =
+          view | std::ranges::views::drop(begin) | std::ranges::views::take(end - begin);
+        size_t i = 0;
+        try {
+            for (auto && el : subview) {
+                new (_arr + i) T(std::forward<decltype(el)>(el));
+                MJ_DEBUG;
+                i++;
+            }
+        } catch (...) {
+            destroy_elems(i);
+            deallocate();
+            throw;
+        }
+    }
+
+    ~Slice() noexcept; ///< Destructor.
 };
 
 /**
@@ -140,6 +163,7 @@ template<typename Container>
 requires std::is_same_v<T, typename std::remove_reference_t<Container>::value_type>
 Slice<T>::Slice(Container && container)
     : _arr(nullptr), _len(std::distance(std::begin(container), std::end(container))), _cap(_len) {
+    std::printf("Container\n");
     allocate(_cap);
     size_t i = 0;
     try {
@@ -169,6 +193,7 @@ template<typename T>
 template<typename... Args>
 requires(std::is_constructible_v<T, Args &&> && ...)
 Slice<T>::Slice(Args &&... args) : _arr(nullptr), _len(sizeof...(args)), _cap(_len) {
+    std::printf("Variadic\n");
     allocate(_cap);
     size_t i = 0;
     try {
@@ -188,6 +213,7 @@ Slice<T>::Slice(Args &&... args) : _arr(nullptr), _len(sizeof...(args)), _cap(_l
  */
 template<typename T>
 Slice<T>::~Slice() noexcept {
+    std::printf("Destruction\n");
     destroy_elems(_len);
     deallocate();
 }
@@ -238,8 +264,9 @@ void Slice<T>::deallocate() {
 }
 
 int main() {
-    std::vector<int> v1 = {2, 3, 4, 5, 6};
+    std::vector<int> v1 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     Slice<int> s1(v1);
     Slice<int> s2(std::move(v1));
     Slice<int> s3(22, 23, 24, 25, 26);
+    Slice<int> s4(v1, 3, 7);
 }
