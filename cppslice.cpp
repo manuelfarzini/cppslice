@@ -1,25 +1,21 @@
-#include <ranges>
-#include <type_traits>
+#ifndef SLICE_HXX
+#define SLICE_HXX
+
+#include <iostream>
+#include <print>
+#include <string>
 #include <vector>
 
-#define MJ_DEBUG std::printf("  +---------- DEBUG ----------+ \n")
+#include "utils.hpp"
+
+#endif // SLICE_HXX
 
 template<typename T, typename Container>
 concept Iterable = requires(Container c) {
-    typename Container::value_type;
-    requires std::is_same_v<T, typename Container::value_type>;
+    requires std::is_same_v<T, typename std::decay_t<Container>::value_type>;
     { std::begin(c) } -> std::input_iterator;
     { std::end(c) } -> std::sentinel_for<decltype(std::begin(c))>;
 };
-
-template<typename T, typename V>
-concept View = std::ranges::input_range<V> && std::is_same_v<T, std::ranges::range_value_t<V>>;
-
-template<typename T>
-auto make_slice(View<T> auto && view, size_t start, size_t end) {
-    if (start > end) throw std::out_of_range("Start index cannot be greater than end index");
-    return view | std::ranges::views::drop(start) | std::ranges::views::take(end - start);
-}
 
 /**
  * @class Slice
@@ -65,42 +61,39 @@ private:
       "Type T must provide a destructor if it is not trivially destructible"
     );
 
-    void allocate(size_t);         ///< Allocates `this` and its elements.
-    void deallocate();             ///< Deallocates `this` and its elements.
-    void destroy_elems(size_t);    ///< Destroys elements of `this`.
+    void allocate(size_t);          ///< Allocates `this` and its elements.
+    void deallocate();              ///< Deallocates `this` and its elements.
+    void destroy_elems(size_t);     ///< Destroys elements of `this`.
 
 public:
-    Slice();                       ///< Default constructor.
-    Slice(size_t);                 ///< Size constructor.
-    Slice(T *, size_t);            ///< Array constructor.
+    Slice();                        ///< Default constructor.
+    Slice(size_t);                  ///< Size constructor.
+    Slice(T *, size_t);             ///< Array constructor.
 
     template<typename Container>
-    requires std::is_same_v<T, typename std::remove_reference_t<Container>::value_type>
-    Slice(Container && container); ///< Templated constructor.
+    requires Iterable<T, Container> // Constraint: the container must satisfy the Iterable concept
+    Slice(Container && container);  ///< Templated constructor.
 
     template<typename... Args>
-    requires(std::is_constructible_v<T, Args &&> && ...)
-    Slice(Args &&... args);        ///< Variadic constructor.
+    Slice(Args &&... args);         ///< Variadic constructor.
 
-    Slice(auto && view, size_t begin, size_t end)
-        : _arr(nullptr), _len(end - begin + 1), _cap(_len) {
-        allocate(_cap);
-        if (begin > end) throw std::out_of_range("Start index cannot be greater than end index");
-        std::printf("View\n");
-        auto subview =
-          view | std::ranges::views::drop(begin) | std::ranges::views::take(end - begin);
-        size_t i = 0;
-        try {
-            for (auto && el : subview) {
-                new (_arr + i) T(std::forward<decltype(el)>(el));
-                MJ_DEBUG;
-                i++;
-            }
-        } catch (...) {
-            destroy_elems(i);
-            deallocate();
-            throw;
+    T * operator[](size_t);         ///< Subscript operator.
+    Slice<T> operator[](size_t, size_t); ///< Slice operator.
+
+    void print()
+    {
+        for (size_t i = 0; i < _len; ++i) {
+            std::println("{}", _arr[i]);
         }
+    }
+
+    std::string toString()
+    {
+        std::string s;
+        for (size_t i = 0; i < _len; ++i) {
+            s += std::format("{}\n", _arr[i]);
+        }
+        return s;
     }
 
     ~Slice() noexcept; ///< Destructor.
@@ -112,7 +105,8 @@ public:
  * Creates an empty slice.
  */
 template<typename T>
-Slice<T>::Slice() : _arr(nullptr), _len(0), _cap(0) {}
+Slice<T>::Slice() : _arr(nullptr), _len(0), _cap(0)
+{}
 
 /**
  * @brief Size constructor.
@@ -122,7 +116,8 @@ Slice<T>::Slice() : _arr(nullptr), _len(0), _cap(0) {}
  * @param cap The initial capacity of the slice.
  */
 template<typename T>
-Slice<T>::Slice(size_t cap) : _arr(nullptr), _len(0), _cap(cap) {
+Slice<T>::Slice(size_t cap) : _arr(nullptr), _len(0), _cap(cap)
+{
     allocate(cap);
 }
 
@@ -138,11 +133,12 @@ Slice<T>::Slice(size_t cap) : _arr(nullptr), _len(0), _cap(cap) {
  * @throws invalid_argument if the array pointer is `nullptr` and the size is greater than zero.
  */
 template<typename T>
-Slice<T>::Slice(T * brr, size_t size) : _arr(brr), _len(size), _cap(size) {
+Slice<T>::Slice(T * brr, size_t size) : _arr(brr), _len(size), _cap(size)
+{
     if (brr == nullptr && size > 0) {
         throw std::invalid_argument(
           "Error: a slice cannot be nullptr if the size is greater than zero."
-        );
+        ); // XXX:
     }
 }
 
@@ -160,18 +156,30 @@ Slice<T>::Slice(T * brr, size_t size) : _arr(brr), _len(size), _cap(size) {
  */
 template<typename T>
 template<typename Container>
-requires std::is_same_v<T, typename std::remove_reference_t<Container>::value_type>
+requires Iterable<T, Container>
 Slice<T>::Slice(Container && container)
-    : _arr(nullptr), _len(std::distance(std::begin(container), std::end(container))), _cap(_len) {
-    std::printf("Container\n");
+    : _arr(nullptr), _len(std::distance(std::begin(container), std::end(container))), _cap(_len)
+{
     allocate(_cap);
     size_t i = 0;
     try {
         for (auto && el : std::forward<Container>(container)) {
-            new (_arr + i) T(std::forward<decltype(el)>(el));
+            if constexpr (std::is_move_constructible_v<T>) {
+                std::println("Iterable Move");
+                new (_arr + i) T(std::move(el));
+            } else if constexpr (std::is_copy_constructible_v<T>) {
+                std::println("Iterable Copy");
+                new (_arr + i) T(el);
+            } else {
+                static_assert(
+                  std::is_constructible_v<T, decltype(el)>,
+                  "Element type is neither copy-constructible nor move-constructible!"
+                );
+            }
             i++;
         }
-    } catch (...) {
+    }
+    catch (...) {
         destroy_elems(i);
         deallocate();
         throw;
@@ -191,14 +199,20 @@ Slice<T>::Slice(Container && container)
  */
 template<typename T>
 template<typename... Args>
-requires(std::is_constructible_v<T, Args &&> && ...)
-Slice<T>::Slice(Args &&... args) : _arr(nullptr), _len(sizeof...(args)), _cap(_len) {
-    std::printf("Variadic\n");
+Slice<T>::Slice(Args &&... args) : _arr(nullptr), _len(sizeof...(args)), _cap(_len)
+{
     allocate(_cap);
     size_t i = 0;
     try {
-        ((new (_arr + i++) T(std::forward<Args>(args))), ...);
-    } catch (...) {
+        if constexpr (std::is_move_constructible_v<T>) {
+            std::println("Variadic Move");
+            ((new (_arr + i++) T(std::move(args))), ...);
+        } else if constexpr (std::is_copy_constructible_v<T>) {
+            std::println("Variadic Copy");
+            ((new (_arr + i++) T(args)), ...);
+        }
+    }
+    catch (...) {
         destroy_elems(i);
         deallocate();
         throw;
@@ -212,8 +226,9 @@ Slice<T>::Slice(Args &&... args) : _arr(nullptr), _len(sizeof...(args)), _cap(_l
  * in a waiting phase. Otherwise, it calls the destructor for those particular elements.
  */
 template<typename T>
-Slice<T>::~Slice() noexcept {
-    std::printf("Destruction\n");
+Slice<T>::~Slice() noexcept
+{
+    std::println("Destruction");
     destroy_elems(_len);
     deallocate();
 }
@@ -227,7 +242,8 @@ Slice<T>::~Slice() noexcept {
  * @param count The number of elements to destroy.
  */
 template<typename T>
-void Slice<T>::destroy_elems(size_t count) {
+void Slice<T>::destroy_elems(size_t count)
+{
     if (_arr) return;
     if constexpr (!std::is_trivially_destructible_v<T>) {
         for (size_t i = 0; i < count; ++i) {
@@ -244,7 +260,8 @@ void Slice<T>::destroy_elems(size_t count) {
  * @param cap The capacity to allocate.
  */
 template<typename T>
-void Slice<T>::allocate(size_t cap) {
+void Slice<T>::allocate(size_t cap)
+{
     _arr = static_cast<T *>(::operator new[](cap * sizeof(T)));
 }
 
@@ -254,7 +271,8 @@ void Slice<T>::allocate(size_t cap) {
  * Frees the memory and resets the slice to an empty state.
  */
 template<typename T>
-void Slice<T>::deallocate() {
+void Slice<T>::deallocate()
+{
     if (_arr) {
         ::operator delete[](_arr);
         _arr = nullptr;
@@ -263,10 +281,60 @@ void Slice<T>::deallocate() {
     }
 }
 
-int main() {
-    std::vector<int> v1 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    Slice<int> s1(v1);
-    Slice<int> s2(std::move(v1));
-    Slice<int> s3(22, 23, 24, 25, 26);
-    Slice<int> s4(v1, 3, 7);
+template<typename T>
+T * Slice<T>::operator[](size_t i)
+{
+    if (i < 0 || i >= _len) {
+        throw std::out_of_range("Invalid argument"); // XXX:
+    }
+    return &_arr[i];
+}
+
+template<typename T>
+Slice<T> Slice<T>::operator[](size_t i, size_t f)
+{
+    if (i < 0 || f < 0 || i >= _len || f >= _len || f <= i) {
+        throw std::out_of_range("Invalid argument");
+    }
+    return Slice<T>(&_arr[i], f - i);
+}
+
+void mjdebug()
+{
+    std::println("+---------- DEBUG ----------+");
+}
+
+void test_ctors();
+
+int main()
+{
+    test_ctors();
+
+    Slice<int> s(1, 3, 4, 5, 6);
+    std::println("{:s}", s.toString());
+    s.print();
+
+    return 0;
+}
+
+void test_ctors()
+{
+    Point p;
+    std::vector<Point> pp = {p};
+
+    Slice<Point> s1(p);
+    Slice<Point> s2;
+    Slice<Point> s3(pp);
+    std::println("{}", s3[0]->x);
+
+    OnlyCopyable cp1(0);
+    OnlyMovable mv1(0);
+    std::vector<OnlyCopyable> vcp = {cp1};
+    std::vector<OnlyMovable> vmv;
+    vmv.emplace_back(std::move(mv1));
+
+    Slice<OnlyCopyable> s4(cp1);
+    Slice<OnlyMovable> s5(mv1);
+    Slice<OnlyCopyable> s6(vcp);
+    Slice<OnlyMovable> s7(vmv);
 }

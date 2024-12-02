@@ -1,0 +1,26 @@
+If:
+  PathMatch: .*\.cpp
+CompileFlags:
+  Add: 
+    [ -std=c++2b, -Wall, -Wextra, -Wshadow, -Werror, -pedantic ]
+
+If:
+  PathMatch: .*\.c
+CompileFlags:
+  Add: 
+    [ -std=c2x, -Wall, -Wextra, -Wshadow, -Werror, -pedantic,]
+
+If:
+  PathMatch: .*\.hpp
+CompileFlags:
+  Add: 
+    [ -std=c++2b, -Wall, -Wextra, -Wshadow, -Werror, -pedantic ]
+
+ClangTidy:
+  CheckOptions:
+    [ { key: modernize-use-auto, value: 1 } ]
+  AdditionalChecks:
+    [ bugprone-branch-clone, clang-analyzer-core.uninitialized.Store, misc-unused-parameters ]
+  Checks: 
+    [ modernize-use-auto, modernize-loop-conversion, modernize-pass-by-value, modernize-redundant-void-arg, performance-unnecessary-value-param, readability-magic-numbers ]
+
