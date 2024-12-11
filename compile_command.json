@@ -1,5 +1,0 @@
-{
-  "file": "cppslice.hpp",
-  "command": "g++ -std=c++2b -Wall -Wextra -Wshadow -Werror -pedantic cppslice.hpp",
-  "directory": "path/to"
-}

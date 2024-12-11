@@ -1,6 +1,12 @@
-a.out
 docs/
 Doxyfile
-run.sh
-.DS_Store
 
+.cache/
+.clangd
+compile_commands.json
+
+a.out
+*.o
+*.x
+
+.DS_Store

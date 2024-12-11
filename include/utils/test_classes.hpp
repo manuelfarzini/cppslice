@@ -24,12 +24,10 @@ struct Point {
 class OnlyMovable {
 public:
     OnlyMovable(int value) : value_(value) {}
-    OnlyMovable(OnlyMovable && other) noexcept : value_(other.value_)
-    {
+    OnlyMovable(OnlyMovable && other) noexcept : value_(other.value_) {
         other.value_ = 0;
     }
-    OnlyMovable & operator=(OnlyMovable && other) noexcept
-    {
+    OnlyMovable & operator=(OnlyMovable && other) noexcept {
         if (this != &other) {
             value_ = other.value_;
             other.value_ = 0;
@@ -47,11 +45,8 @@ class OnlyCopyable {
 public:
     OnlyCopyable(int value) : value_(value) {}
     OnlyCopyable(const OnlyCopyable & other) : value_(other.value_) {}
-    OnlyCopyable & operator=(const OnlyCopyable & other)
-    {
-        if (this != &other) {
-            value_ = other.value_;
-        }
+    OnlyCopyable & operator=(const OnlyCopyable & other) {
+        if (this != &other) { value_ = other.value_; }
         return *this;
     }
     OnlyCopyable(OnlyCopyable &&) = delete;
