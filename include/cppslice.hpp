@@ -5,16 +5,16 @@
 #include <string>
 #include <vector>
 
-template<typename T, typename Container>
-concept Iterable = requires(Container c) {
-    requires std::is_same_v<T, typename std::decay_t<Container>::value_type>;
+template<typename T, typename CollT>
+concept Iterable = requires(CollT c) {
+    requires std::is_same_v<T, typename std::decay_t<CollT>::value_type>;
     { std::begin(c) } -> std::input_iterator;
     { std::end(c) } -> std::sentinel_for<decltype(std::begin(c))>;
 };
 
 /**
  * @class Slice
- *@brief A view over a dynamic, resizable collection of homogeneous elements.
+ * @brief A view over a dynamic, resizable collection of homogeneous elements.
  *
  * A typical `Slice` represents a view over a dynamic, resizable collection of
  * homogeneous elements. It behaves similarly to array slices in other programming languages and
@@ -34,12 +34,12 @@ private:
     T * arr_;    ///< The collection of elements in `this`.
     size_t len_; ///< The number of elements currently in `this`.
     size_t cap_; ///< The maximum capacity of `this`.
-    /*-
-     *      AF(arr_) = [a_0, a_1, …, a_len-1, a_len, …, a_cap]
-     *      - a_0, a_1, …, a_len-1 are the stored elements.
-     *      - a_len, …, a_cap are inactive elements that are over-allocated.
+    /*–
+     * AF(arr_) = [a_0, a_1, …, a_len-1, a_len, …, a_cap]
+     * a_0, a_1, …, a_len-1 are the stored elements.
+     * a_len, …, a_cap are inactive elements that are over-allocated.
      *
-     *     RI(arr_, len_, cap_) = 0 ≤ len_ < cap_ && arr_ == nullptr  <==>  len_ == 0
+     * RI(arr_, len_, cap_) = 0 ≤ len_ < cap_ && arr_ == nullptr  <==>  len_ == 0
      */
 
     static_assert(
@@ -130,21 +130,17 @@ public:
      * The collection can be either copied or moved.
      * If an exception is thrown, it triggers a cleanup routine and propagates the exception.
      *
-     * @tparam Container The type of the collection.
-     * @param container The container from which to generate `this`.
+     * @tparam CollT The type of the collection.
+     * @param c The c from which to generate `this`.
      *
      * @throws Any exception that may be thrown during the operation.
      */
-    template<typename Container>
-    requires Iterable<T, Container>
-    Slice(Container && container)
-        : arr_(nullptr),
-          len_(std::distance(std::begin(container), std::end(container))),
-          cap_(len_) {
+    Slice(auto && c) requires Iterable<T, decltype(c)>
+        : arr_(nullptr), len_(std::distance(std::begin(c), std::end(c))), cap_(len_) {
         allocate();
         size_t i = 0;
         try {
-            for (auto && el : std::forward<Container>(container)) {
+            for (auto && el : std::forward<decltype(c)>(c)) {
                 if constexpr (std::is_move_constructible_v<T>) {
                     std::println("Iterable Move");
                     new (arr_ + i) T(std::move(el));
