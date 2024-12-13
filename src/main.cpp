@@ -23,6 +23,12 @@ void test_ctors() {
 
     Slice<int> s8(1, 2, 3, 4, 5);
     Slice<int> s9{1, 2, 3, 4, 5};
+
+    NonTriviallyDestructible ntd;
+    Slice<NonTriviallyDestructible> s10(ntd);
+
+    std::vector<NonTriviallyDestructible> vntd = {ntd, ntd};
+    Slice<NonTriviallyDestructible> s11(vntd);
 }
 
 int main() {

@@ -1,26 +1,10 @@
 #ifndef UTILS_HXX
 #define UTILS_HXX
-class CopyPoint {
-public:
-    CopyPoint() = default;
-    ~CopyPoint() = default;
-    CopyPoint(CopyPoint &&) = delete;
-    CopyPoint(const CopyPoint &) = default;
-};
-
-class MovePoint {
-public:
-    MovePoint() = default;
-    ~MovePoint() = default;
-    MovePoint(MovePoint &&) = default;
-    MovePoint(MovePoint &) = delete;
-};
-
+#include <mutex>
 struct Point {
     int x = 0;
     int y = 0;
 };
-
 class OnlyMovable {
 public:
     OnlyMovable(int value) : value_(value) {}
@@ -40,7 +24,6 @@ public:
 private:
     int value_;
 };
-
 class OnlyCopyable {
 public:
     OnlyCopyable(int value) : value_(value) {}
@@ -55,5 +38,27 @@ public:
 private:
     int value_;
 };
+class NonTriviallyDestructible {
+private:
+    int * data;
+    std::mutex mtx;
 
+public:
+    NonTriviallyDestructible() {
+        data = new int[10];
+    }
+    ~NonTriviallyDestructible() {
+        delete[] data;
+    }
+    NonTriviallyDestructible(const NonTriviallyDestructible & o) {
+        data = new int[10];
+        for (int i = 0; i < 10; ++i) data[i] = o.data[i];
+    }
+    void lock() {
+        mtx.lock();
+    }
+    void unlock() {
+        mtx.unlock();
+    }
+};
 #endif // UTILS_HXX

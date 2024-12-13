@@ -1,9 +1,15 @@
 #ifndef SLICE_HXX
 #define SLICE_HXX
 
+#include <concepts>
 #include <print>
 #include <string>
+#include <type_traits>
 #include <vector>
+
+#ifndef nil_
+#define nil_ nullptr
+#endif
 
 template<typename T, typename CollT>
 concept Iterable = requires(CollT c) {
@@ -11,6 +17,12 @@ concept Iterable = requires(CollT c) {
     { std::begin(c) } -> std::input_iterator;
     { std::end(c) } -> std::sentinel_for<decltype(std::begin(c))>;
 };
+
+template<typename T, typename... Args>
+concept HomogeneousArgumented = requires(Args... args) { (std::is_same_v<T, Args> && ...); };
+
+template<typename T>
+concept Destructible = std::is_trivially_destructible_v<T> && std::is_nothrow_destructible_v<T>;
 
 /**
  * @class Slice
@@ -39,13 +51,8 @@ private:
      * a_0, a_1, …, a_len-1 are the stored elements.
      * a_len, …, a_cap are inactive elements that are over-allocated.
      *
-     * RI(arr_, len_, cap_) = 0 ≤ len_ < cap_ && arr_ == nullptr  <==>  len_ == 0
+     * RI(arr_, len_, cap_) = 0 ≤ len_ < cap_ && arr_ == nil_  <==>  len_ == 0
      */
-
-    static_assert(
-      std::is_trivially_destructible_v<T> || std::is_destructible_v<T>,
-      "Type T must provide a destructor if it is not trivially destructible"
-    );
 
     /**
      * @brief Allocates memory for `this`.
@@ -64,7 +71,7 @@ private:
     void deallocate() {
         if (arr_) {
             ::operator delete[](arr_);
-            arr_ = nullptr;
+            arr_ = nil_;
             len_ = 0;
             cap_ = 0;
         }
@@ -78,9 +85,11 @@ private:
      *
      * @param count The number of elements to destroy.
      */
+
     void destroy_elems(size_t count) {
-        if (arr_) return;
-        if constexpr (!std::is_trivially_destructible_v<T>) {
+        if (!arr_) return;
+        if constexpr (!Destructible<T>) {
+            std::println("Non-trivial destruction");
             for (size_t i = 0; i < count; ++i) { arr_[i].~T(); }
         }
     }
@@ -91,7 +100,7 @@ public:
      *
      * Creates an empty `this`.
      */
-    Slice() : arr_(nullptr), len_(0), cap_(0) {}
+    Slice() : arr_(nil_), len_(0), cap_(0) {}
 
     /**
      * @brief Size constructor.
@@ -100,7 +109,7 @@ public:
      *
      * @param cap The initial capacity of `this`.
      */
-    Slice(size_t cap) : arr_(nullptr), len_(0), cap_(cap) {
+    Slice(size_t cap) : arr_(nil_), len_(0), cap_(cap) {
         allocate();
     }
 
@@ -113,12 +122,12 @@ public:
      * @param brr The array to view.
      * @param size The size of `brr`.
      *
-     * @throws invalid_argument if the array pointer is `nullptr` and the size is greater than zero.
+     * @throws invalid_argument if the array pointer is `nil_` and the size is greater than zero.
      */
     Slice(T * brr, size_t size) : arr_(brr), len_(size), cap_(size) {
-        if (brr == nullptr && size > 0) {
+        if (brr == nil_ && size > 0) {
             throw std::invalid_argument(
-              "Error: a slice cannot be nullptr if the size is greater than zero."
+              "Error: a slice cannot be nil_ if the size is greater than zero."
             );
         }
     }
@@ -136,15 +145,15 @@ public:
      * @throws Any exception that may be thrown during the operation.
      */
     Slice(auto && c) requires Iterable<T, decltype(c)>
-        : arr_(nullptr), len_(std::distance(std::begin(c), std::end(c))), cap_(len_) {
+        : arr_(nil_), len_(std::distance(std::begin(c), std::end(c))), cap_(len_) {
         allocate();
         size_t i = 0;
         try {
             for (auto && el : std::forward<decltype(c)>(c)) {
-                if constexpr (std::is_move_constructible_v<T>) {
+                if constexpr (std::move_constructible<T>) {
                     std::println("Iterable Move");
                     new (arr_ + i) T(std::move(el));
-                } else if constexpr (std::is_copy_constructible_v<T>) {
+                } else if constexpr (std::copy_constructible<T>) {
                     std::println("Iterable Copy");
                     new (arr_ + i) T(el);
                 } else {
@@ -173,15 +182,15 @@ public:
      *
      * @throws Any exception that may be thrown during the operation.
      */
-    template<typename... Args>
-    Slice(Args &&... args) : arr_(nullptr), len_(sizeof...(args)), cap_(len_) {
+    Slice(auto &&... args) requires HomogeneousArgumented<T, decltype(args)...>
+        : arr_(nil_), len_(sizeof...(args)), cap_(len_) {
         allocate();
         size_t i = 0;
         try {
-            if constexpr (std::is_move_constructible_v<T>) {
+            if constexpr (std::move_constructible<T>) {
                 std::println("Variadic Move");
                 ((new (arr_ + i++) T(std::move(args))), ...);
-            } else if constexpr (std::is_copy_constructible_v<T>) {
+            } else if constexpr (std::copy_constructible<T>) {
                 std::println("Variadic Copy");
                 ((new (arr_ + i++) T(args)), ...);
             }
@@ -230,7 +239,7 @@ public:
      *
      * @return A string representation of `this`.
      */
-    std::string toString() {
+    std::string toString() { // XXX: arr_[i] must support formatting
         std::string s;
         for (size_t i = 0; i < len_; ++i) { s += std::format("{}\n", arr_[i]); }
         return s;

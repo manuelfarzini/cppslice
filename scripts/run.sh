@@ -1,5 +1,6 @@
 rm -rf .cache
+rm compile_commands.json
 make clean
-make
+bear -- make
 clear
 ./cppslice.x
